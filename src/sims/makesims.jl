@@ -1,3 +1,33 @@
+function makesims_FHN(pvals, analysisdict)
+    odeprob = construct_odeproblem_FHN(pvals)
+    details = get_integration_details(pvals)
+    solver = get_solver(pvals)
+    @unpack ttrans, Δt, tend = pvals
+    sol = solve(odeprob, solver, saveat=ttrans:Δt:tend; details...)
+    res = analyse_solution(sol, analysisdict, pvals, odeprob)
+    return res
+end
+
+function construct_odeproblem_FHN(pvals)
+    u0s = get_initialconditions(pvals)
+    params = ParametersFHN(pvals)
+    @unpack tend = pvals
+    return ODEProblem(fitzhugh_nagumo_mat_rule!, u0s, (0, tend), params)
+end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 #TODO: check if loading all parameters every time slows code down significantly!; also if reusing some allocated matrices makes sense!
 function makesims(pvals, analysisdict)
@@ -13,7 +43,6 @@ end
 function construct_odeproblem(pvals)
     u0s = get_initialconditions(pvals)
     paramscoup = get_coupling(pvals)
-    println(paramscoup)
     paramsunits = get_paramsunits(pvals);
     paramssystem = ParamsSystem(paramscoup, paramsunits)
     @unpack tend = pvals
@@ -75,7 +104,7 @@ function get_integration_details(pvals)
     details = NamedTuple()
     @unpack unitm, N = pvals
     if unitm == "FHN"
-        cb = VectorContinuousCallback(condition_spike,affect_spike!, N; affect_neg! = nothing);
+        cb = VectorContinuousCallback(condition_spike!, affect_spike!, N; affect_neg! = nothing);
         details = (callback=cb, )
     end
 
@@ -88,6 +117,8 @@ function get_solver(pvals)
         return Tsit5()
     elseif solver == "vern9"
         return Vern9()
+    elseif solver == "autotsi5trbdf2"
+        solver = AutoTsit5(TRBDF2())
     else
         @error "No solver found, $solver"
     end

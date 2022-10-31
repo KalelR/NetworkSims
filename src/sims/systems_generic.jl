@@ -27,8 +27,9 @@ Generic system: unit_f + coup_f
 function system!(du, u, p, t)
     for i = 1:size(du, 2)
         du_view = view(du, 1:2, i)
+        u_view = view(u, 1:2, i)
         params_unit = p.params_units[i]
-        params_unit.unit_f!(du_view, u, params_unit.params_model, t)
+        params_unit.unit_f!(du_view, u_view, params_unit.params_model, t)
         p.params_coup.coup_type.coup_f_sum!(i, du_view, u, p.params_coup, t)
     end
     return nothing

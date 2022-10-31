@@ -50,6 +50,16 @@ function get_num_eqs(pvals)
     end
 end
 
+# ---------------------------------------------------------------------------- #
+#                                   TOPOLOGY                                   #
+# ---------------------------------------------------------------------------- #
+# I'll start with just two types of connetions: E and I; I can later implement other types eg E2, I2, ...
+#1. generate adjl and save; one seed here
+#2. assign types to the connections in adjl and save as connsl; another seed here
+
+#adjl: pure connections
+#connsl: connections + assignment of type; currently this is just an intermediate step
+#A and E: matrices with the values of each type inside
 
 function adjmat_to_adjlist(mat)
     N = size(mat)[1]
@@ -61,7 +71,7 @@ function adjmat_to_adjlist(mat)
     return v_adjl
 end
 
-function adjlist_to_adjmat(adjl)
+function connlist_to_adjmat(adjl)
     A = zeros(Int64, (length(adjl), length(adjl)))
     for (i, neighbors) in enumerate(adjl)
         A[i, neighbors] .= 1
@@ -70,29 +80,120 @@ function adjlist_to_adjmat(adjl)
     return A
 end
 
-# using Graphs
-# N = 10
-# k = 3
-# Ne = k*N
-# g = erdos_renyi(N, Ne)
-# adjm = adjacency_matrix(g)
-# adjl = adjmat_to_adjlist(adjm)
+function get_coupling_parameters(pvals)
+    @unpack ϵ, gmax_exc, E_exc, gmax_inh, E_inh, τs_exc, τs_inh  = pvals
+    adjl = get_adjl(pvals)
+    connsl = get_connsl(pvals)
+    type_to_params = Dict(:E=>(gmax_exc, E_exc, τs_exc), :I=>(gmax_inh, E_inh, τs_inh))
+    return get_coupling_parameters(adjl, connsl, type_to_params, pvals)
+end
 
-# τss = [1.3]
-# gmaxs = [-2, +2]
-# Es = [-3, +3]
-# using StatsBase
-# # a=sample(gmaxs, Weights([0.2, 0.8]), 1000)
-# connl = Vector{Vector{Tuple{Int64, ParamsCoupTypeSp}}}(undef, N)
-# for (i, neighbors) in enumerate(adjl)
-#     conn = Vector{Tuple{Int64, ParamsCoupTypeSp}}(undef, length(neighbors))
-#     for (j, neigh) in enumerate(neighbors)
-#         gmax=sample(gmaxs, Weights([0.2, 0.8]))
-#         τs=sample(τss, Weights([1.0]))
-#         E=sample(Es, Weights([0.2, 0.8]))
-#         push!(conn, (neigh, ParamsSynAlpha(τs, gmax, E)))
-#         conn[j] = (neigh, ParamsSynAlpha(τs, gmax, E))
-#     end
-#     connl[i] = conn
-# end
-# connl
+function get_coupling_parameters(pvals, adjl, connsl, type_to_params; ϵ=1.0)
+    A, E = connlist_to_adjmat(connsl, type_to_params)
+    @unpack ϵ = pvals
+    A = ϵ .* A
+    alltypes = keys(type_to_params)
+    receivertypes = receiver_types(connsl, alltypes)
+
+    τs_vals = Dict(keys(type_to_params) .=> map(x->x[3], values(type_to_params)))
+
+    return A, adjl, E, receivertypes, τs_vals
+end
+
+function receiver_types(i, connsl, alltypes)
+    recvtypes = Dict(alltypes .=> [Int[] for i in eachindex(collect(alltypes))])
+    for (rec, recvtype) in connsl[i]
+        push!(recvtypes[recvtype], rec)
+    end
+    return recvtypes
+end
+
+function receiver_types(connsl, alltypes)
+    recvtypes_allunits = [receiver_types(i, connsl, alltypes) for i in eachindex(connsl)]
+end
+
+function get_connsl(pvals)
+    @unpack N, topm = pvals
+    if topm == "ER"
+        @unpack k, topseed, types, probabilities, EIseed = pvals
+        connslname = "$(datadir())/sims/inputs/N_$N/connsl-$topm-N_$N-k_$k-seed_$topseed-types_$types-probabilities_$probabilities-EIseed_$EIseed.jld2"
+        if isfile(connslname)
+            return load(connslname)["connsl"]
+        else
+            @info("File $connslname was not found. Generating it and saving now.")
+            adjl = get_adjl(pvals)
+            connsl = connectionslist(adjl, types, probabilities; EIseed)
+            safesave(connslname, Dict("connsl"=>connsl))
+            return connsl
+        end
+    elseif topm == "121"
+        connsl = [[(1, :E), (2, :I)], [], []];
+        return connsl
+    else
+        error("No other topm found")
+    end
+end
+
+"""
+adjl[i] contains receivers of connections starting from node i
+"""
+function get_adjl(pvals)
+    @unpack topm = pvals
+    if topm == "ER"
+        @unpack N, k, topseed = pvals
+        filename = "$(datadir())/sims/inputs/N_$N/graph-$topm-N_$N-k_$k-seed_$topseed.jld2"
+        if isfile(filename)
+            g = load(filename)["g"]
+            adjl = g.fadjlist;
+        else
+            @info("File $filename was not found. Generating it and saving now.")
+            Ne = k*N
+            g = erdos_renyi(N, Ne; is_directed=true, rng=MersenneTwister(topseed))
+            safesave(filename, Dict("g"=>g))
+            adjl = g.fadjlist; #out neighbors == receivers of each node
+            return adjl
+        end
+    elseif topm == "121"
+        adjl = [[1,2], [], []]
+    else
+        error("No other topm found")
+    end
+end
+
+numberofconnections(adjl) = sum(length.(adjl))
+
+@inbounds function connectionslist(adjl, types::Vector{T}, probabilities::Vector{Float64}; EIseed=1) where {T}
+    N = length(adjl)
+    connsl = [Tuple{Int, T}[] for i=1:N]
+    numconns = numberofconnections(adjl)
+    types = StatsBase.sample(MersenneTwister(EIseed), types, Weights(probabilities), numconns) #pregenerate, so I can use the rng easily
+    cont = 1
+    for (i, receivers) in enumerate(adjl)
+        conns = Tuple{Int, T}[]
+        for (j, rec) in enumerate(receivers)
+            type = types[cont]; cont+=1;
+            push!(conns, (rec, type))
+        end
+        connsl[i] =  conns
+    end
+    return connsl
+end
+
+using SparseArrays
+"""
+type_to_params: Dict(:type=>(weight, e), :type2=>(weight2, e2))
+"""
+function connlist_to_adjmat(connl, type_to_params)
+    A = zeros(Float64, (length(connl), length(connl)))
+    E = zeros(Float64, (length(connl), length(connl)))
+    # Tau = zeros(Float64, (length(connl), length(connl)))
+    @inbounds for (i, conn) in enumerate(connl)
+        for (rec, type) in conn
+            weight, e, τ = type_to_params[type]
+            A[i, rec] = weight
+            E[i, rec] = e
+            # Tau[i, rec] = τ
+        end
+    end
+    return sparse(A), sparse(E)
+end

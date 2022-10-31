@@ -1,3 +1,13 @@
+# the naive implementation
+# function fitzhugh_nagumo!(du, u, p, t)
+#     @unpack a, b, c, I = p
+#     for i = 1:size(du,2)
+#         V, w = @view u[:, i]
+#         du[1, i] = V*(a-V)*(V-1) -w + I + coupling(i, u, p, t) #Vdot
+#         du[2, i] = b*V - c*w
+#     end
+# end
+
 mutable struct SpikeTimeDetection{A, B, C}
     spiketimes :: Matrix{A} #{N, numts}
     current_st_idx :: Vector{B}
@@ -45,8 +55,6 @@ p_conn = params for this specific connection
 p_conns = general parameters for all connections
 """
 function coup_f_syn(post_unit, pre_unit, u, p_sp, p_coup, t)
-    t_s = 0.0;
-    # t_s = p_coup.ts[pre_unit, :];
     @unpack gmax, E = p_sp
     sum = 0.0
     for t_s in p_coup.coup_type.spiketime_detection.spiketimes[pre_unit, :]
@@ -60,6 +68,11 @@ function alphafunction(t, t_s, p)
     return δt * exp(1 - δt)
 end
 
+function alphafunction(t, t_s, τs::Float64)
+    δt = (t-t_s)/τs
+    return δt * exp(1 - δt)
+end
+
 function condition_spike(out, u, t, integrator)
     for i = 1:size(u,2)
         V = u[1, i];
@@ -68,10 +81,13 @@ function condition_spike(out, u, t, integrator)
 end
 
 function affect_spike!(integrator, idx)
-    # push!(integrator.p.spiketimes[idx], integrator.t) #TODO: what if multiple neurons spike at the same time-step??
     st_struct = integrator.p.params_coup.coup_type.spiketime_detection
-    st_struct.spiketimes[idx, st_struct.current_st_idx[idx]] = integrator.t #TODO: what if multiple neurons spike at the same time-step??
-    st_struct.current_st_idx[idx] = nextindex(st_struct.current_st_idx[idx], st_struct.numstoredspikes)
+    # st_struct.spiketimes[idx, st_struct.current_st_idx[idx]] = integrator.t #TODO: what if multiple neurons spike at the same time-step??
+    # st_struct.current_st_idx[idx] = nextindex(st_struct.current_st_idx[idx], st_struct.numstoredspikes)
+    for idx_spiked in findall(x->x==true, integrator.callback_cache.vector_event_idxs)
+    st_struct.spiketimes[idx_spiked, st_struct.current_st_idx[idx_spiked]] = integrator.t #TODO: what if multiple neurons spike at the same time-step??
+    st_struct.current_st_idx[idx_spiked] = nextindex(st_struct.current_st_idx[idx_spiked], st_struct.numstoredspikes)
+    end
 end
 
 function nextindex(idx, maxidx)
