@@ -85,7 +85,7 @@ function get_coupling_parameters(pvals)
     adjl = get_adjl(pvals)
     connsl = get_connsl(pvals)
     type_to_params = Dict(:E=>(gmax_exc, E_exc, τs_exc), :I=>(gmax_inh, E_inh, τs_inh))
-    return get_coupling_parameters(adjl, connsl, type_to_params, pvals)
+    return get_coupling_parameters(pvals, adjl, connsl, type_to_params)
 end
 
 function get_coupling_parameters(pvals, adjl, connsl, type_to_params; ϵ=1.0)
@@ -182,6 +182,8 @@ end
 using SparseArrays
 """
 type_to_params: Dict(:type=>(weight, e), :type2=>(weight2, e2))
+adjl[i]: connections i->nodes; contains nodes that receives connections from i
+A[i,j]: sender of i (weight of connection j->i); so A[i, :] control the senders of i; A[:, i] = receivers of i
 """
 function connlist_to_adjmat(connl, type_to_params)
     A = zeros(Float64, (length(connl), length(connl)))
@@ -190,10 +192,11 @@ function connlist_to_adjmat(connl, type_to_params)
     @inbounds for (i, conn) in enumerate(connl)
         for (rec, type) in conn
             weight, e, τ = type_to_params[type]
-            A[i, rec] = weight
-            E[i, rec] = e
+            A[rec, i] = weight
+            E[rec, i] = e
             # Tau[i, rec] = τ
         end
     end
-    return sparse(A), sparse(E)
+    # return sparse(A), sparse(E)
+    return A, E
 end

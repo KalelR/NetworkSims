@@ -100,11 +100,12 @@ function get_paramsunits(pvals)
     return params_units
 end
 
-function get_integration_details(pvals)
+function get_integration_details(pvals; skipinterpolation=false)
+    if haskey(pvals, "skipinterpolation") skipinterpolation = pvals["skipinterpolation"] end
     details = NamedTuple()
     @unpack unitm, N = pvals
     if unitm == "FHN"
-        cb = VectorContinuousCallback(condition_spike!, affect_spike!, N; affect_neg! = nothing);
+        cb = VectorContinuousCallback(condition_spike!, affect_spike!, N; affect_neg! = nothing, skipinterpolation);
         details = (callback=cb, )
     end
 

@@ -1,11 +1,28 @@
 # """
-# See tests for performance comparison. This allocates but is nevertheless faster for small and big N!
+# See tests for performance comparison. This is faster for sparse matrices, but Tullio is faster for dense.
 # """
 @inbounds function diagmul!(result, A, B)
-    result .= dot.(eachrow(A), eachcol(B))
+    for (ind, r, c) in zip(eachindex(result), eachrow(A), eachcol(B))
+        result[ind] = dot(r, c)
+    end
     nothing
 end
 
+# """
+# Need to receive transpose of A
+# """
+@inbounds function diagmul_t!(result, At, B)
+    for (ind, r, c) in zip(eachindex(result), eachcol(At), eachcol(B))
+        result[ind] = dot(r, c)
+    end
+    nothing
+end
+
+# "for dense matrices"
+@inbounds function diagmul_d!(result, A, B)
+    @tullio result[i] = A[i,j]*B[j,i]
+    nothing
+end
 
 function alphafunction(t, t_s, τs::Float64)
     δt = (t-t_s)/τs
