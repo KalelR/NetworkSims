@@ -36,14 +36,8 @@ function name_result(savevariable, pvals, ptypes; fileformat="jld2", kwargs...)
     fullfilename = "$(datadir())/sims/results/$(dirpath)/$(filename).$(fileformat)"
 end
 
-function plotname(plottitle, pvals, ptypes; fileformat=".png", kwargs...)
-    dirpath = name_dir(pvals, ptypes; kwargs...);
-    filename = name_file(savevariable, pvals, ptypes; kwargs...)
-    fullfilename = "$(plotsdir())/sims/results/$(dirpath)/$(filename).$(fileformat)"
-end
-
-function plotname(plottitle, pvals, ptypes; fileformat=".png", kwargs...)
-    dirpath = name_dir(pvals, ptypes; kwargs...);
-    filename = name_file(savevariable, pvals, ptypes; kwargs...)
+function plotname(plottitle, pvals, ptypes; fileformat="png", equals="_", connector="-", sort=true, ignores=(), digits=20, allowedtypes=(Real, String, Symbol, Vector) , kwargs...)
+    dirpath = name_dir(pvals, ptypes; equals, connector, sort, ignores, digits, allowedtypes, kwargs...);
+    filename = name_file(plottitle, pvals, ptypes;  equals, connector, sort, ignores, digits, allowedtypes, kwargs...)
     fullfilename = "$(plotsdir())/sims/results/$(dirpath)/$(filename).$(fileformat)"
 end

@@ -67,7 +67,6 @@ end
     @. AΔV = A * ΔV #gmax*(E-V)*Aij, NxN
     syn_sum!(p, t) #Ct = sum of conductances, 1xN
     diagmul_d!(Icoup, AΔV, Ct) #Icoup, (allocates)
-
     f!(dVs, Vs, ws, p, t)
     @. dVs = dVs + Icoup
     g!(dws, Vs, ws, p, t)
