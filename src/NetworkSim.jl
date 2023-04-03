@@ -10,9 +10,9 @@ export condition_spike, affect_spike!, system!
 export ParametersFHN, makesims_FHN
 export separatedicts, plotname, spiketimes
 
-include("input-interface.jl");
-include("output-interface.jl");
-include("savers.jl");
+include("input-output/input-interface.jl");
+include("input-output/output-interface.jl");
+include("input-output/savers.jl");
 include("sims/systems_generic.jl");
 include("sims/systems/FHN.jl");
 include("utils.jl");

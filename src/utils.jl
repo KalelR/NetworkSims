@@ -25,7 +25,6 @@ end
 end
 
 function alphafunction(t, t_s, τs::Float64)
-    if t < t_s @warn "OPAAAA" end
     δt = (t-t_s)/τs
     return δt * exp(1 - δt)
 end

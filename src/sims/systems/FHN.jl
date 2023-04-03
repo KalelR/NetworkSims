@@ -9,14 +9,14 @@ mutable struct SpikeTimeDetection
 end
 
 @inbounds function f!(dVs, V, w, p, t)
-    @unpack a, b, c, I = p
+    @unpack a, I = p
     @. dVs = V * (a - V) * (V - 1) - w + I
     nothing
 end
 
 @inbounds function g!(dws, V, w, p, t)
-    @unpack b, c = p
-    @. dws = b*V - c*w
+    @unpack b, c, d = p
+    @. dws = d*(b*V - c*w)
     nothing
 end
 
@@ -77,6 +77,7 @@ mutable struct ParametersFHN
     a :: Vector{Float64}
     b :: Vector{Float64}
     c :: Vector{Float64}
+    d :: Vector{Float64}
     I :: Vector{Float64}
     A :: Matrix{Float64}
     adjl ::Vector{Vector{Int64}}
@@ -97,7 +98,7 @@ Aij = weight of j->i
 connsl[i] = [(unit, type), (unit2, type2), ...] of receivers of conns from node i
 """
 function ParametersFHN(pvals, args...)
-    @unpack a, b, c, I, numstoredspiketimes, Vth = pvals
+    @unpack a, b, c, d, I, numstoredspiketimes, Vth = pvals
     #topology
     A, adjl, E, receivertypes, τs_vals = get_coupling_parameters(pvals, args...)
     conductance = alphafunction
@@ -114,7 +115,7 @@ function ParametersFHN(pvals, args...)
     spiketimedetection = SpikeTimeDetection(spiketimes, current_spikes_idxs, Vth, numstoredspiketimes)
 
     return ParametersFHN(
-    a, b, c, I, #units
+    a, b, c, d, I, #units
     A, adjl, E, τs_vals, receivertypes, conductance, #coupling
     spiketimedetection, Ct, Csum, Icoup, ΔV, AΔV #prealloc
     )
@@ -127,6 +128,7 @@ mutable struct ParametersFHN_s
     a :: Vector{Float64}
     b :: Vector{Float64}
     c :: Vector{Float64}
+    d :: Vector{Float64}
     I :: Vector{Float64}
     At :: SparseMatrixCSC{Float64, Int64} #sparse
     adjl ::Vector{Vector{Int64}}
@@ -147,7 +149,7 @@ Aij = weight of j->i
 connsl[i] = [(unit, type), (unit2, type2), ...] of receivers of conns from node i
 """
 function ParametersFHN_s(pvals, args...)
-    @unpack a, b, c, I, numstoredspiketimes, Vth = pvals
+    @unpack a, b, c, d, I, numstoredspiketimes, Vth = pvals
     #topology
     A, adjl, E, receivertypes, τs_vals = get_coupling_parameters(pvals, args...)
     conductance = alphafunction
@@ -166,7 +168,7 @@ function ParametersFHN_s(pvals, args...)
     spiketimedetection = SpikeTimeDetection(spiketimes, current_spikes_idxs, Vth, numstoredspiketimes)
 
     return ParametersFHN_s(
-    a, b, c, I, #units
+    a, b, c, d, I, #units
     At, adjl, Et, τs_vals, receivertypes, conductance, #coupling
     spiketimedetection, Ct, Csum, Icoup, ΔVt, AΔVt #prealloc
     )
