@@ -80,9 +80,18 @@ function connlist_to_adjmat(adjl)
     return A
 end
 
+function multiplyglobalconstant!(adjl::Vector{Vector{Any}}, ϵ)
+    for adjl_unit in adjl
+        for (neighbor, params_conn) in adjl_unit
+            params_conn.gmax *= ϵ
+        end
+    end
+end
+
 function get_coupling_parameters(pvals)
     @unpack ϵ, gmax_exc, E_exc, gmax_inh, E_inh, τs_exc, τs_inh  = pvals
     adjl = get_adjl(pvals)
+    multiplyglobalconstant!(adjl, ϵ)
     connsl = get_connsl(pvals)
     type_to_params = Dict(:E=>(gmax_exc, E_exc, τs_exc), :I=>(gmax_inh, E_inh, τs_inh))
     return get_coupling_parameters(pvals, adjl, connsl, type_to_params)

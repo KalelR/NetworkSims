@@ -12,7 +12,7 @@ function construct_odeproblem_FHN(pvals)
     u0s = get_initialconditions(pvals)
     params = ParametersFHN(pvals)
     @unpack tend = pvals
-    return ODEProblem(fitzhugh_nagumo_mat_rule!, u0s, (0, tend), params)
+    return ODEProblem(bidimensional_synaptic_coupling_rule!, u0s, (0, tend), params)
 end
 
 
@@ -58,13 +58,6 @@ function get_coupling(pvals)
     return paramscoup
 end
 
-function multiplyglobalconstant!(adjl::Vector{Vector{Any}}, ϵ)
-    for adjl_unit in adjl
-        for (neighbor, params_conn) in adjl_unit
-            params_conn.gmax *= ϵ
-        end
-    end
-end
 
 function get_coupling_type(pvals)
     @unpack couplingm = pvals;
