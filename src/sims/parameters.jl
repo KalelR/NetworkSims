@@ -21,8 +21,10 @@ function get_initialconditions(pvals)
     @unpack ictype = pvals
     if ictype == "uniform"
         return get_initialconditions_uniform(pvals)
+    elseif ictype isa AbstractArray
+        return ictype
     end
-    @error("No initial condition type could be found for pvals = $pvals.")
+    @error("No initial condition type $ictype could be found for pvals = $pvals.")
 end
 
 function get_initialconditions_uniform(pvals)
@@ -88,23 +90,28 @@ function multiplyglobalconstant!(adjl::Vector{Vector{Any}}, ϵ)
     end
 end
 
+"""
+Wrapper around pvals
+"""
 function get_coupling_parameters(pvals)
     @unpack ϵ, gmax_exc, E_exc, gmax_inh, E_inh, τs_exc, τs_inh  = pvals
     adjl = get_adjl(pvals)
-    multiplyglobalconstant!(adjl, ϵ)
     connsl = get_connsl(pvals)
+    gmax_exc *= ϵ; gmax_inh *= ϵ; #multiply by global coup strength already (saves up computations later)
+    gmax_exc /= (exp(1)*τs_exc); gmax_inh /= (exp(1)*τs_inh); # normalize alpha function so that strength ofinteractions does not depend on tau
     type_to_params = Dict(:E=>(gmax_exc, E_exc, τs_exc), :I=>(gmax_inh, E_inh, τs_inh))
     return get_coupling_parameters(pvals, adjl, connsl, type_to_params)
 end
 
+"""
+Receives 
+* `type_to_params` which is a Dict containing the information of each type of connection; e.g. :E=>(gmaxE, E_E, τE), :I=>(gmaxI, ...)
+"""
 function get_coupling_parameters(pvals, adjl, connsl, type_to_params; ϵ=1.0)
     A, E = connlist_to_adjmat(connsl, type_to_params)
-    @unpack ϵ = pvals
-    A = ϵ .* A
     alltypes = keys(type_to_params)
     receivertypes = receiver_types(connsl, alltypes)
-
-    τs_vals = Dict(keys(type_to_params) .=> map(x->x[3], values(type_to_params)))
+    τs_vals = Dict(keys(type_to_params) .=> map(x->x[3], values(type_to_params))) #convenience dict
 
     return A, adjl, E, receivertypes, τs_vals
 end
@@ -117,6 +124,10 @@ function receiver_types(i, connsl, alltypes)
     return recvtypes
 end
 
+"""
+Receives the connections list and 
+Returns a vector of size N containing the receiver types for each unit. The receiver types a Dictionary
+"""
 function receiver_types(connsl, alltypes)
     recvtypes_allunits = [receiver_types(i, connsl, alltypes) for i in eachindex(connsl)]
 end
@@ -136,7 +147,7 @@ function get_connsl(pvals)
             return connsl
         end
     elseif topm == "121"
-        connsl = [[(1, :E), (2, :I)], [], []];
+        connsl = [[(2, :E), (3, :I)], [], []];
         return connsl
     else
         error("No other topm found")
@@ -163,7 +174,7 @@ function get_adjl(pvals)
             return adjl
         end
     elseif topm == "121"
-        adjl = [[1,2], [], []]
+        adjl = [[2,3], [], []]
     else
         error("No other topm found")
     end
@@ -171,13 +182,18 @@ end
 
 numberofconnections(adjl) = sum(length.(adjl))
 
-@inbounds function connectionslist(adjl, types::Vector{T}, probabilities::Vector{Float64}; EIseed=1) where {T}
+"""
+Vector of size N; each index i contains information about the neighborhood of i, each element is (index_of_receiving_unit, type_of_the_connection)
+Assigns connection to its type randomly
+"""
+function connectionslist(adjl, types::Vector{T}, probabilities::Vector{Float64}; EIseed=1) where {T}
     N = length(adjl)
     connsl = [Tuple{Int, T}[] for i=1:N]
+    # connsl = Vector{Tuple{Int, T}}(undef, N)
     numconns = numberofconnections(adjl)
     types = StatsBase.sample(MersenneTwister(EIseed), types, Weights(probabilities), numconns) #pregenerate, so I can use the rng easily
     cont = 1
-    for (i, receivers) in enumerate(adjl)
+    @inbounds for (i, receivers) in enumerate(adjl)
         conns = Tuple{Int, T}[]
         for (j, rec) in enumerate(receivers)
             type = types[cont]; cont+=1;

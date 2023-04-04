@@ -1,6 +1,8 @@
 using FunctionWrappers
 import FunctionWrappers: FunctionWrapper
 
+include("synaptic_coupling.jl")
+
 mutable struct ParametersFHN
     f:: Function 
     g:: Function 
@@ -22,6 +24,38 @@ mutable struct ParametersFHN
     Icoup :: Vector{Float64}
     ΔV :: Matrix{Float64}
     AΔV :: Matrix{Float64}
+end
+
+"""
+Aij = weight of j->i
+connsl[i] = [(unit, type), (unit2, type2), ...] of receivers of conns from node i
+"""
+function ParametersFHN(pvals, args...)
+    @unpack a, b, c, d, I, numstoredspiketimes, Vth = pvals
+    
+    f = f_FHN! 
+    g = g_FHN!
+    
+    #topology
+    A, adjl, E, receivertypes, τs_vals = get_coupling_parameters(pvals, args...)
+    conductance = alphafunction
+    N = length(adjl)
+    #preallocated
+    spiketimes = Matrix{Union{Nothing, Float64}}(undef, (N, numstoredspiketimes))
+    Icoup = zeros(Float64, N)
+    ΔV = zeros(Float64, (N, N))
+    AΔV = zeros(Float64, size(A))
+    Ct = zeros(Float64, (N,N))
+    Csum = zeros(Float64, 2) #one for Exc, another for Inh; in general length(unique(τsmat))
+    current_spikes_idxs = ones(Int64, N)
+    spiketimedetection = SpikeTimeDetection(spiketimes, current_spikes_idxs, Vth, numstoredspiketimes)
+
+    return ParametersFHN(
+    f, g, 
+    a, b, c, d, I, #units
+    A, N, adjl, E, τs_vals, receivertypes, conductance, #coupling
+    spiketimedetection, Ct, Csum, Icoup, ΔV, AΔV #prealloc
+    )
 end
 
 @inbounds function f_FHN!(dVs, V, w, p, t)
@@ -49,44 +83,11 @@ end
     syn_sum!(p, t) #Ct = sum of conductances, 1xN
     diagmul_d!(Icoup, AΔV, Ct) #Icoup, (allocates)
     
-    
     f(dVs, Vs, ws, p, t)
     @. dVs = dVs + Icoup
     g(dws, Vs, ws, p, t)
     nothing
 end
 
-
-"""
-Aij = weight of j->i
-connsl[i] = [(unit, type), (unit2, type2), ...] of receivers of conns from node i
-"""
-function ParametersFHN(pvals, args...)
-    @unpack a, b, c, d, I, numstoredspiketimes, Vth = pvals
-    
-    f = f_FHN! 
-    g = g_FHN!
-    
-    #topology
-    A, adjl, E, receivertypes, τs_vals = get_coupling_parameters(pvals, args...)
-    conductance = alphafunction
-    N = length(adjl)
-    #preallocated
-    spiketimes = zeros(N, numstoredspiketimes);
-    Icoup = zeros(Float64, N)
-    ΔV = zeros(Float64, (N, N))
-    AΔV = zeros(Float64, size(A))
-    Ct = zeros(Float64, (N,N))
-    Csum = zeros(Float64, 2) #one for Exc, another for Inh; in general length(unique(τsmat))
-    current_spikes_idxs = ones(Int64, N)
-    spiketimedetection = SpikeTimeDetection(spiketimes, current_spikes_idxs, Vth, numstoredspiketimes)
-
-    return ParametersFHN(
-    f, h, 
-    a, b, c, d, I, #units
-    A, N, adjl, E, τs_vals, receivertypes, conductance, #coupling
-    spiketimedetection, Ct, Csum, Icoup, ΔV, AΔV #prealloc
-    )
-end
 
 
