@@ -20,8 +20,15 @@ function get_integration_details(pvals; skipinterpolation=false)
     details = NamedTuple()
     @unpack unitm, N = pvals
     if unitm == "FHN"
-        cb = VectorContinuousCallback(condition_spike!, affect_spike!, N; affect_neg! = nothing, skipinterpolation);
-        details = (callback=cb, )
+        cb = VectorContinuousCallback(condition_spike!, affect_spike!, N; affect_neg! = nothing, skipinterpolation, save_positions=(false, false));
+        if !skipinterpolation
+            details = (callback=cb, abstol=1e-9, reltol=1e-9)
+            # @info "normal, not skipping interpolation"
+        else
+            @unpack Δt = pvals
+            # @info "skipping interpolation"
+            details = (callback=cb, adaptive=false, dt=Δt)
+        end
     end
 
     return details

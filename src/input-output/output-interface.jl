@@ -30,14 +30,32 @@ end
 """
 SPs go into directory names, with lowest number higher on top of the dir hierarchy; cp goes into variable name; any other type is naturally ignored in the name (but they are of course available for makesims in pvals)
 """
-function name_result(savevariable, pvals, ptypes; fileformat="jld2", kwargs...)
-    dirpath = name_dir(pvals, ptypes; kwargs...);
-    filename = name_file(savevariable, pvals, ptypes; kwargs...)
-    fullfilename = "$(datadir())/sims/results/$(dirpath)/$(filename).$(fileformat)"
+function name_result(savevariable, pvals, ptypes; fileformat="jld2", equals="_", connector="-", sort=true, ignores=(), digits=20, allowedtypes=(Real, String, Symbol, Vector), kwargs...)
+    dirpath = name_dir(pvals, ptypes; equals, connector, sort, ignores, digits, allowedtypes, kwargs...);
+    filename = name_file(savevariable, pvals, ptypes;  equals, connector, sort, ignores, digits, allowedtypes, kwargs...)
+    fullfilename = "$(datadir())/sims/results/$(dirpath)/$(filename)"
+    # fullfilename = "$(datadir())/sims/results/$(dirpath)/$(filename).$(fileformat)"
 end
 
-function plotname(plottitle, pvals, ptypes; fileformat="png", equals="_", connector="-", sort=true, ignores=(), digits=20, allowedtypes=(Real, String, Symbol, Vector) , kwargs...)
+function plotname(plottitle, _pvals, ptypes; fileformat="png", equals="_", connector="-", sort=true, ignores=(), digits=20, allowedtypes=(Real, String, Symbol, Vector) , kwargs...)
+    pvals = deepcopy(_pvals)
+    cp = findfirst(x->values(x)=="CP", ptypes)
+    pvals[cp] = pvals[cp] isa String ? pvals[cp] : number_to_padded_string(pvals[cp], 4, 4)
     dirpath = name_dir(pvals, ptypes; equals, connector, sort, ignores, digits, allowedtypes, kwargs...);
     filename = name_file(plottitle, pvals, ptypes;  equals, connector, sort, ignores, digits, allowedtypes, kwargs...)
     fullfilename = "$(plotsdir())/sims/results/$(dirpath)/$(filename).$(fileformat)"
+end
+
+function number_to_padded_string(num::Number, padleft=4, padright=4)
+    num_s = string(num) 
+    idx = findfirst(".", num_s)[1] #idx of the decimal point
+    right = num_s[idx+1:end]
+    left = num_s[1:idx-1] 
+    left_s = lpad(left, 4, "0")
+    right_s = rpad(right, 4, "0")
+    num_s_pad = left_s * right_s
+end
+
+function number_to_padded_string(num::AbstractArray, padleft=4, padright=4)
+    number_to_padded_string(num[1], padleft, padright)
 end

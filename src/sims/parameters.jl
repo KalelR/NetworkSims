@@ -18,6 +18,9 @@ function get_topology(pvals)
 end
 
 function get_initialconditions(pvals)
+    # ics = get(pvals, "ics", nothing)
+    # if ics isa Vector return ics end 
+    
     @unpack ictype = pvals
     if ictype == "uniform"
         return get_initialconditions_uniform(pvals)
@@ -35,7 +38,8 @@ function get_initialconditions_uniform(pvals)
     else
         @info("File $icfilename with initial conditions was not found. Generating new initial conditions and saving them.")
         numeqs = get_num_eqs(pvals)
-        u0s = rand(MersenneTwister(icseed), Uniform(icmin, icmax), (numeqs, N))
+        # u0s = rand(MersenneTwister(icseed), Uniform(icmin, icmax), (numeqs, N))
+        u0s = rand(MersenneTwister(icseed), Uniform(icmin, icmax), (numeqs*N))
         safesave(icfilename, Dict("ics"=>u0s))
         return u0s
     end
@@ -97,9 +101,11 @@ function get_coupling_parameters(pvals)
     @unpack ϵ, gmax_exc, E_exc, gmax_inh, E_inh, τs_exc, τs_inh  = pvals
     adjl = get_adjl(pvals)
     connsl = get_connsl(pvals)
+    # @show connsl
     gmax_exc *= ϵ; gmax_inh *= ϵ; #multiply by global coup strength already (saves up computations later)
     gmax_exc /= (exp(1)*τs_exc); gmax_inh /= (exp(1)*τs_inh); # normalize alpha function so that strength ofinteractions does not depend on tau
     type_to_params = Dict(:E=>(gmax_exc, E_exc, τs_exc), :I=>(gmax_inh, E_inh, τs_inh))
+    # @show connsl
     return get_coupling_parameters(pvals, adjl, connsl, type_to_params)
 end
 
@@ -149,6 +155,21 @@ function get_connsl(pvals)
     elseif topm == "121"
         connsl = [[(2, :E), (3, :I)], [], []];
         return connsl
+    elseif topm == "bidirectional"
+        connsl = [[(2, :E)], [(1, :E)]];
+        return connsl
+    elseif topm == "wattsstrogatz"
+            @unpack k, rewiring_prob, topseed, types, probabilities, EIseed = pvals
+            connslname = "$(datadir())/sims/inputs/N_$N/connsl-$topm-N_$N-k_$k-rewiringprob_$rewiring_prob-seed_$topseed-types_$types-probabilities_$probabilities-EIseed_$EIseed.jld2"
+            if isfile(connslname)
+                return load(connslname)["connsl"]
+            else
+                @info("File $connslname was not found. Generating it and saving now.")
+                adjl = get_adjl(pvals)
+                connsl = connectionslist(adjl, types, probabilities; EIseed)
+                safesave(connslname, Dict("connsl"=>connsl))
+                return connsl
+            end
     else
         error("No other topm found")
     end
@@ -175,6 +196,20 @@ function get_adjl(pvals)
         end
     elseif topm == "121"
         adjl = [[2,3], [], []]
+    elseif topm == "bidirectional"
+        adjl = [[2], [1]]
+    elseif topm == "wattsstrogatz"
+        @unpack N, k, rewiring_prob, topseed = pvals
+        filename = "$(datadir())/sims/inputs/N_$N/graph-$topm-N_$N-k_$k-rewiringprob_$rewiring_prob-seed_$topseed.jld2"
+        if isfile(filename)
+            g = load(filename)["g"]
+            adjl = g.fadjlist;
+        else
+            g = watts_strogatz(N, k, rewiring_prob; is_directed=false, rng=MersenneTwister(topseed))
+            safesave(filename, Dict("g"=>g))
+            adjl = g.fadjlist; #out neighbors == receivers of each node
+            return adjl
+        end
     else
         error("No other topm found")
     end

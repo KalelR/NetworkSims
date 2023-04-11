@@ -5,6 +5,22 @@ mutable struct SpikeTimeDetection
     numstoredspikes :: Int64
 end
 
+function reinit_synaptic!(odeproblem)
+    # p.spiketimedetection.spiketimes = Matrix{Union{Nothing, Float64}}(undef, (N, numstoredspiketimes))
+    p = odeproblem.p
+    fill!(p.spiketimedetection.spiketimes, nothing) 
+    fill!(p.spiketimedetection.current_spikes_idxs, 1)
+    fill!(p.Icoup, 0.0)
+    fill!(p.ΔV, 0.0)
+    fill!(p.AΔV, 0.0)
+    fill!(p.Ct, 0.0)
+    fill!(p.Csum, 0.0)
+    nothing
+end
+
+
+
+
 
 """
 Current that each unit is *sending*, not receiving. This is different than what I used to
