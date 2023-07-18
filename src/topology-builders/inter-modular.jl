@@ -1,20 +1,70 @@
 using Random, StatsBase
 
 """
+can return matrix of symbols
+`topology_of_modules`: index i is the `topm` for module i
+`num_connections`: matrix of NxN
+
+Currently implemented connection_deciders:
+- _decide_source_and_targets_only_E_to_I 
+- _decide_source_and_targets_uniform
+"""
+function build_adjacency_matrix_modules(modules_params, num_connections, connection_decider=_decide_source_and_targets_only_E_to_I; intermodseed=1)
+
+    As = Vector{Matrix{Symbol}}(undef, length(modules_params))
+    for i in eachindex(modules_params)
+        module_params = modules_params[i]
+        connsl = get_connsl(module_params)
+        @show connsl
+        A = connsl_to_adjmat(connsl)
+        check_solitary_nodes(A)
+        @show A
+        As[i] = A
+    end
+    inter_modular_specifier = Dict("num_connections"=>num_connections) 
+    
+    Afull = connect_modules(As, inter_modular_specifier, connection_decider; net_seed=intermodseed)
+    @show Afull
+    
+    return Afull
+end
+
+function check_solitary_nodes(A)
+    (N,N) = size(A)
+    for i = 1:N
+        incoming = A[:, i]
+        filter!(x->x!=:O, incoming)
+        if length(incoming) == 0 
+            @warn "node $i does not receive any input"
+        end
+        
+        outgoing = A[i, :]
+        filter!(x->x!=:O, outgoing)
+        if length(outgoing) == 0 
+            @warn "node $i does not send any input"
+        end
+    end
+    nothing
+end
+
+    
+
+"""
 Considers entry A[idx_source, idx_target].
 #TODO: support non-directed networks
 """
-function connect_modules(As::Vector{Matrix{A}}, num_connections::Matrix{Int}; kwargs...) where {A}
+function connect_modules(As::Vector{Matrix{T}}, inter_modular_specifier::Dict, connections_decider=_decide_source_and_targets_uniform; kwargs...) where {T}
+    @show As
     sizes_modules = map(Ai->size(Ai, 1), As)
     Ntot = sum(sizes_modules)
-    Afull = zeros(A, (Ntot, Ntot))
+    Afull = Matrix{Symbol}(undef, (Ntot, Ntot)); fill!(Afull, :O)
     
     #copy each module in As into A
     for (idx_module, Ai) in enumerate(As)
         copy_adj!(Ai, Afull, idx_module, sizes_modules)
     end
     
-    connect_modules!(Afull, As, num_connections; kwargs...)
+    connect_modules!(Afull, As, inter_modular_specifier, connections_decider; kwargs...)
 
     
     return Afull
@@ -26,66 +76,102 @@ function copy_adj!(A_source, A_target, module_idx, sizes_modules)
     nothing 
 end
 
-function connect_modules!(A, As, num_connections::Matrix{Int}; net_seed = 1, kwargs...)
+function connect_modules!(A, As, inter_modular_specifier, connections_decider; net_seed = 1, kwargs...)
     sizes_modules = map(Ai->size(Ai, 1), As)
     rng = MersenneTwister(net_seed)
-    number_connections_ij = Int64[]
-    number_modules = length(As)
-    number_pairs_modules = number_modules^2
     for idx_module_i in 1:length(As)
         Ai = As[idx_module_i]
         for idx_module_j in 1:length(As)
             if idx_module_i == idx_module_j continue end
             Aj = As[idx_module_j]
-            number_connections_ij = num_connections[idx_module_i, idx_module_j]
-            connect_modules_pairwise!(A, Ai, idx_module_i, Aj, idx_module_j, number_connections_ij, sizes_modules, rng; kwargs...)
+            connect_modules_pairwise!(A, Ai, idx_module_i, Aj, idx_module_j, inter_modular_specifier, sizes_modules, rng, connections_decider; kwargs...)
         end
     end
     nothing
 end
 
-function connect_modules_pairwise!(A, Ai, i, Aj, j, num_connections, sizes_modules, rng; is_directed::Bool = false, kwargs...)
+function connect_modules_pairwise!(A, Ai, i, Aj, j, inter_modular_specifier, sizes_modules, rng, connections_decider; is_directed::Bool = false, kwargs...)
     idxs_all = _idxs_module(A, 1, sizes_modules)
     idxs_source_module = _idxs_module(Ai, i, sizes_modules)
     idxs_target_module = _idxs_module(Aj, j, sizes_modules)
-    # idxs_others = setdiff(idxs_all, idxs_module)
     
-    idxs_source, idxs_target = _decide_source_and_target_idxs(rng, num_connections, idxs_source_module, idxs_target_module, A)
+    idxs_source, idxs_target, connection_types = source_and_targets(rng, idxs_source_module, idxs_target_module, A, connections_decider, inter_modular_specifier, i, j; kwargs...)
     @show idxs_source
     @show idxs_target
-    _assign_connections!(idxs_source, idxs_target, A)
+    @show connection_types
+    _assign_connections!(A, idxs_source, idxs_target, connection_types)
     
     nothing
+end
+
+function source_and_targets(rng, idxs_source_module, idxs_target_module, A, connections_decider::Function, inter_modular_specifier, idx_module_i, idx_module_j; kwargs...)
+    idxs_permissible_connections = _available_connections(idxs_source_module, idxs_target_module, A)
+    return connections_decider(rng, idxs_permissible_connections, inter_modular_specifier, idx_module_i, idx_module_j, A; kwargs...)
 end
 
 """
 Find the empty entries in the adjacency matrix A that are valid connections - this means excluding the on-diagonal entries and the intra-modular entries.
 """
-function _decide_source_and_target_idxs(rng, num_connections_ij, idxs_source_module, idxs_target_module, A)
+function _available_connections(idxs_source_module, idxs_target_module, A)
     idxs_offdiag = offdiag_idxs(A) #cartesian
-    idxs_empty_entries_offdiag = idxs_offdiag[findall(x->A[x] == 0, idxs_offdiag)] 
-    idxs_empty_entries_permissible = [idx for idx in idxs_empty_entries_offdiag if ( !(idx[2] ∈ idxs_source_module ) && (idx[1] ∈ idxs_source_module) && (idx[2] ∈ idxs_target_module) )] #removed off diag, now remove idxs belonging to the same (source) module #TODO: this is not correct, finding many repeated targets
-    max_number_conns = length(idxs_empty_entries_permissible)
+    idxs_empty_entries_offdiag = idxs_offdiag[findall(x->A[x] == :O, idxs_offdiag)] 
+    idxs_empty_entries_permissible = [idx for idx in idxs_empty_entries_offdiag if ( !(idx[2] ∈ idxs_source_module ) && (idx[1] ∈ idxs_source_module) && (idx[2] ∈ idxs_target_module) )] 
+    return idxs_empty_entries_permissible
+end
+
+function _decide_source_and_targets_uniform(rng, idxs_permissible_connections, inter_modular_specifier, idx_module_i, idx_module_j, A; kwargs...)
+    num_connections_ij = inter_modular_specifier["num_connections"][idx_module_i, idx_module_j]
     
+    max_number_conns = length(idxs_permissible_connections)
     if max_number_conns < num_connections_ij 
         @warn "maximum number of connections $max_number_conns is smaller than the number of requested connections $num_connections_ij - the matrix is too full. Filling it with all possible connections!"
     end
     num_connections = clamp(num_connections_ij, 0, max_number_conns)
-    chosen_connections = sample(rng, idxs_empty_entries_permissible, num_connections; replace=false)
+    @show idxs_permissible_connections 
+    @show num_connections
+    chosen_connections = sample(rng, idxs_permissible_connections, num_connections; replace=false)
     idxs_source = [chosen_connection[1] for chosen_connection in chosen_connections]
     idxs_target = [chosen_connection[2] for chosen_connection in chosen_connections]
+    connection_types = [:E for _ in eachindex(idxs_source)]
     
-    return idxs_source, idxs_target
+    return idxs_source, idxs_target, connection_types
 end
 
-function _assign_connections!(idxs_s, idxs_t, A; is_directed = false)
+function _decide_source_and_targets_only_E_to_I(rng, idxs_permissible_connections, inter_modular_specifier, idx_module_i, idx_module_j, A; kwargs...)
+    node_types = identify_node_types(A) 
+    idxs_connections = [idx for idx in idxs_permissible_connections if ( (node_types[idx[1]] == :E) && (node_types[idx[2]] == :I)   )] #excitatory to inh only!
+    @show idxs_connections
+    return _decide_source_and_targets_uniform(rng, idxs_connections, inter_modular_specifier, idx_module_i, idx_module_j; kwargs...)
+end
+
+function identify_node_types(A)
+    (N,N)=size(A)
+    node_types = Vector{Symbol}(undef, N)
+    for (idx_node, row) in enumerate(eachrow(A))
+        unique_conns = unique(row)
+        filter!(x->x!=:O, unique_conns)
+        if length(unique_conns) == 1 
+            node_type = unique_conns[1]
+        else 
+            @error "More than one connection type in row for neuron $idx_node, with row $row"
+        end
+        
+        node_types[idx_node] = node_type
+    end
+    return node_types
+end
+
+
+
+function _assign_connections!(A, idxs_s, idxs_t, connection_types=[:E for _ in eachindex(idxs_s)]; is_directed = false)
     num_conns = length(idxs_s)
     for idx_connection in 1:num_conns
         idx_t = idxs_t[idx_connection]
         idx_s = idxs_s[idx_connection]
-        A[idx_s, idx_t] = 1 #todo: check ordering (matters for directed nets!)
+        conn_type = connection_types[idx_connection]
+        A[idx_s, idx_t] = conn_type #todo: check ordering (matters for directed nets!)
         if is_directed 
-            A[idx_t, idx_s] = 1 
+            A[idx_t, idx_s] = conn_type
         end
     end 
     nothing 
@@ -104,6 +190,7 @@ function offdiag_idxs(A::AbstractMatrix)
 end 
 
 function plot_adjacency_matrix!(A, ax, fig; idxcol=1)
+    @show A
     (N, N) = size(A)
     sources = 1:N
     targets = 1:N
@@ -114,6 +201,11 @@ function plot_adjacency_matrix!(A, ax, fig; idxcol=1)
     ax.ylabel = "targets"
     colsize!(fig.layout, idxcol, Aspect(1, 1.0))
     return nothing
+end
+
+function plot_adjacency_matrix!(_A::Matrix{Symbol}, args...; kwargs...)
+    A = convert_symbol_to_int(_A)
+    plot_adjacency_matrix!(A, args...; kwargs...)
 end
 
 function plot_adjacency_matrix(A, As)
@@ -129,48 +221,18 @@ function plot_adjacency_matrix(A, As)
 end
 
 
-using Test
-using CairoMakie
-@testset "2 modules" begin
-    A1 = [0 1 0 1; 0 0 0 1; 0 1 0 0; 0 0 1 0]
-    A2 = [0 0 1 1 0; 1 0 0 1 1; 1 1 0 0 0; 0 1 0 0 1; 1 0 1 1 0]
-    As = [A1, A2]
-    num_connections = [0 4; 4 0]
-    # A3 = connect_modules(A1, A2, num_connections)
-    A3 = connect_modules(As, num_connections)
-    @test A3[1:4, 1:4] == A1 
-    @test A3[5:end, 5:end] == A2
 
-    l1=sum(A3[1:4, 5:end])
-    l2=sum(A3[5:end, 1:4])
-    @test l1+l2 == sum(num_connections)
-    fig, axs = plot_adjacency_matrix(A3, As); fig
+function count_connections(A)
+    length(findall(x->x!=:O, A))
 end
 
-@testset "3 modules" begin
-    A1 = [0 1 0 1; 0 0 0 1; 0 1 0 0; 0 0 1 0]
-    A2 = [0 0 1 1 0; 1 0 0 1 1; 1 1 0 0 0; 0 1 0 0 1; 1 0 1 1 0]
-    A3 = [0 1 0 0 0; 0 0 1 0 1; 0 1 0 0 1; 1 1 0 0 1; 1 1 1 1 0]
-    As = [A1, A2, A3]
-    num_connections = [0 4 2; 4 0 1; 0 0 0]
-    
-    Afull = connect_modules(As, num_connections)
-    @test  Afull[1:4, 1:4] == A1 
-    @test  Afull[5:9, 5:9] == A2
-    @test  Afull[10:14, 10:14] == A3
-    
-    idxs_modules = [1:4, 5:9, 10:14]
-    ls = zeros(Int64, (3,3))
-    for i=1:3 
-        for j=1:3
-            if i == j continue  end
-            ls[i,j]=sum(Afull[idxs_modules[i], idxs_modules[j]])
-        end
-    end
-    @test ls == num_connections
-    ls 
-    num_connections
-    
+function convert_int_to_symbol(_A)
+    A = replace(_A, 1=>:E, 0=>:O, -1=>:I)
+    return convert.(Symbol, A)
+end
 
-    fig, axs = plot_adjacency_matrix(Afull, As); fig
+
+function convert_symbol_to_int(_A)
+    A = replace(_A, :E=>1, :I=>-1, :O=>0)
+    return convert.(Int, A)
 end

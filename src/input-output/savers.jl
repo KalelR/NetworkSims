@@ -6,7 +6,7 @@ function saver(res, pvals, ptypes, savemode; equals="_", connector="-", sort=tru
         end
     elseif savemode == "alltogether"
             resfilename = name_result("all", pvals, ptypes; equals, connector, sort, ignores, digits, allowedtypes)
-            println(resfilename)
+            @info "Saving results $savemode in file $resfilename"
             safesave(resfilename, res; kwargs...)
     else
         resfilename = name_result("alltogether", pvals, ptypes; fileformat = "jld2", equals, connector, sort, ignores, digits, allowedtypes)

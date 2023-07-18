@@ -11,6 +11,8 @@ function plot_spatiotemporal_profile!(t, variables; fig=nothing, ax=nothing, idx
     return fig, ax
 end
 
+
+
 function plot_quantifier!(t, measure; fig=nothing, ax=nothing, idxrow=1, idxcol=1, ylabel="R(t)", hidey=false)
     ax = Axis(fig[idxrow, idxcol]; ytickcolor =:red, yticklabelcolor = :red, ylabelcolor=:red, yaxisposition = :right, ylabel)
     hidespines!(ax)
@@ -205,4 +207,74 @@ end
 
 function sync_coordinates(atts_all::Vector{Dict{A,B}}) where {A,B}
     map(atts->sync_coordinates(atts), atts_all)
+end
+
+
+function plot_time_series!(t, variables; fig=nothing, ax=nothing, idxrow=1, idxcol=1, ylabel="R(t)", color=:red)
+    if isnothing(ax) ax = Axis(fig[idxrow, idxcol]) end
+    hidespines!(ax, :r, :t)
+    lines!(ax, t, variables; color)
+    return ax 
+end
+    
+
+function plot_voltages(sols::Vector; axs=nothing, fig=nothing)
+    if isnothing(fig) fig = Figure() end
+    for (idx, sol) in enumerate(sols)
+        ax = 
+        if isnothing(axs)
+            idxrow = idx; idxcol = 1
+            Axis(fig[idxrow, idxcol])
+        else 
+            axs[idx]
+        end
+        plot_voltages!(sol; ax)
+    end
+    return fig 
+end
+
+function plot_voltages!(sol::ODESolution; ax=nothing)
+    N = size_network(sol)
+    Vs = view(sol, 1:N, :)
+    ts = sol.t
+    colors = get_colors(size(Vs, 1), :distinguishable_colors )
+    for (i, Vs_unit) in enumerate(eachrow(Vs))
+        plot_time_series!(ts, Vs_unit; ax, color=colors[i])
+    end
+end
+
+
+function plot_state_space(sols::Vector; fig=nothing, axs=nothing, idxrow=nothing, idxcol=nothing)
+    if isnothing(fig) fig = Figure() end
+    for (idx, sol) in enumerate(sols)
+        ax = 
+        if isnothing(axs)
+            idxrow = idx; idxcol = 1
+            Axis(fig[idxrow, idxcol])
+        else 
+            axs[idx]
+        end
+        plot_state_space!(sol; ax)
+    end
+    return fig 
+end
+
+
+function plot_state_space!(sol; ax=nothing)
+    N = size_network(sol)
+    Vs = view(sol, 1:N, :)
+    ws = view(sol, N+1:2N, :)
+    colors = get_colors(size(Vs, 1), :distinguishable_colors )
+    for i in 1:N
+        lines!(ax, Vs[i, :], ws[i,:], color=colors[i])
+    end
+end
+
+
+function plot_voltages_state_space(sols)
+    numrows = length(sols); numcols=  2
+    fig, axs = subplotgrid(numrows, numcols)
+    plot_voltages(sols; axs=axs[:, 1])
+    plot_state_space(sols; axs=axs[:, 2])
+    return fig
 end

@@ -37,17 +37,19 @@ function name_result(savevariable, pvals, ptypes; fileformat="jld2", equals="_",
     # fullfilename = "$(datadir())/sims/results/$(dirpath)/$(filename).$(fileformat)"
 end
 
-function plotname(plottitle, _pvals, ptypes; fileformat="png", equals="_", connector="-", sort=true, ignores=(), digits=20, allowedtypes=(Real, String, Symbol, Vector) , kwargs...)
+function plotname(plottitle, _pvals, ptypes; fileformat="png", equals="_", connector="-", sort=true, ignores=(), digits=20, allowedtypes=(Real, String, Symbol, Vector), padleft=4, padright=4, kwargs...)
     pvals = deepcopy(_pvals)
     cp = findfirst(x->values(x)=="CP", ptypes)
-    pvals[cp] = pvals[cp] isa String ? pvals[cp] : number_to_padded_string(pvals[cp], 4, 4)
+    pvals[cp] = pvals[cp] isa String ? pvals[cp] : number_to_padded_string(pvals[cp], padleft, padright)
     dirpath = name_dir(pvals, ptypes; equals, connector, sort, ignores, digits, allowedtypes, kwargs...);
     filename = name_file(plottitle, pvals, ptypes;  equals, connector, sort, ignores, digits, allowedtypes, kwargs...)
     fullfilename = "$(plotsdir())/sims/results/$(dirpath)/$(filename).$(fileformat)"
 end
 
+using Formatting
 function number_to_padded_string(num::Number, padleft=4, padright=4)
-    num_s = string(num) 
+    # num_s = string(num) 
+    num_s = sprintf1("%.$(padright)f", num) 
     idx = findfirst(".", num_s)[1] #idx of the decimal point
     right = num_s[idx+1:end]
     left = num_s[1:idx-1] 

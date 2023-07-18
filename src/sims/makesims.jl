@@ -21,13 +21,24 @@ function get_integration_details(pvals; skipinterpolation=false)
     @unpack unitm, N = pvals
     if unitm == "FHN"
         cb = VectorContinuousCallback(condition_spike!, affect_spike!, N; affect_neg! = nothing, skipinterpolation, save_positions=(false, false));
+        
+        shock_times = get(pvals, "shock_times", nothing)
+        if !isnothing(shock_times) 
+            shock_magnitudes = prepare_shock_magnitudes(pvals)
+            affect!(integrator) = shock_affect!(integrator, shock_magnitudes)
+            cb_shock, solve_kwargs_shock = prepare_shock_intervention(affect!, shock_times)
+            cb = CallbackSet(cb_shock, cb) 
+        else 
+            solve_kwargs_shock = ()
+        end
+        
         if !skipinterpolation
-            details = (callback=cb, abstol=1e-9, reltol=1e-9)
+            details = (callback=cb, abstol=1e-9, reltol=1e-9, solve_kwargs_shock...)
             # @info "normal, not skipping interpolation"
         else
             @unpack Δt = pvals
             # @info "skipping interpolation"
-            details = (callback=cb, adaptive=false, dt=Δt)
+            details = (callback=cb, adaptive=false, dt=Δt, solve_kwargs_shock...)
         end
     end
 
@@ -47,9 +58,33 @@ function get_solver(pvals)
     end
 end
 
+function shock_affect!(integrator, shock_magnitudes)
+    integrator.u .+= shock_magnitudes
+end 
 
+function prepare_shock_intervention(affect!, shock_times)
+    cb = PresetTimeCallback(shock_times, affect!)
+    solve_kwargs = (tstops=shock_times, )
+    # solve_kwargs = (callback=cb)
+    return cb, solve_kwargs
+end
 
-
+function prepare_shock_magnitudes(pvals)
+    shock_magnitudes = get(pvals, "shock_magnitudes", nothing)
+    if isnothing(shock_magnitudes)
+        shock_magnitude_info = get(pvals, "shock_magnitude_info", nothing)
+        @unpack N = pvals
+        shock_magnitudes = zeros(Float64, 2N); shock_magnitudes_V = view(shock_magnitudes, 1:N); shock_magnitudes_w = view(shock_magnitudes, N+1:2N)
+        for (idx_neuron_str, (Vshock, wshock)) in shock_magnitude_info 
+            idx_neuron = parse(Int64, idx_neuron_str)
+            shock_magnitudes_V[idx_neuron] = Vshock
+            shock_magnitudes_w[idx_neuron] = wshock
+        end         
+    end
+    @show shock_magnitudes
+    
+    return shock_magnitudes
+end
 
 
 # 

@@ -1,3 +1,7 @@
+
+
+
+
 mutable struct SpikeTimeDetection
     spiketimes :: Matrix{Union{Float64, Nothing}} #{N, numts}
     current_spikes_idxs :: Vector{Int64}
@@ -35,23 +39,17 @@ to quickly assign the connection sum values to each connection type. Goes into t
 matrix.
 """
 function syn_sum!(p, t)
-    C = view(p.Ct, :, :)
-    spiketimes = p.spiketimedetection.spiketimes
-    # conductance = p.conductance
-    Csum = p.Csum
-    τs_vals = p.τs_vals
-    alltypes = keys(τs_vals)
+    C = view(p.Ct, :, :); spiketimes = p.spiketimedetection.spiketimes; Csum = p.Csum; τs_vals = p.τs_vals; receivers_types = p.receivers_types
     spiketimes_rows = eachrow(spiketimes)
     @inbounds for (i, spiketimes_i) in enumerate(spiketimes_rows)
         fill!(Csum, 0.0)
-        receivers = p.adjl[i]::Vector{Int64}
-        if isempty(receivers) continue end #could change this to look at receiver types but oh well i have adjl already...
+        if all(isempty.(values(receivers_types[i]))) continue end 
         for t_s in spiketimes_i
             Csum[1] += alphafunction(t, t_s, τs_vals[:E])
             Csum[2] += alphafunction(t, t_s, τs_vals[:I])
         end
-        C[i, p.receivers_types[i][:E]] .= Csum[1]; #transpose of actual C matrix; element [i,j] contains current that i sends to j
-        C[i, p.receivers_types[i][:I]] .= Csum[2]; #transpose of actual C matrix; element [i,j] contains current that i sends to j
+        C[i, receivers_types[i][:E]] .= Csum[1]; #transpose of actual C matrix; element [i,j] contains current that i sends to j
+        C[i, receivers_types[i][:I]] .= Csum[2]; #transpose of actual C matrix; element [i,j] contains current that i sends to j
     end
     return nothing
 end

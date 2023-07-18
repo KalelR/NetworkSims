@@ -115,14 +115,16 @@ function run_allparams_study_sync_coordinates(pvals_list, ptypes; kwargs...)#, T
 end
 
 
+
 """
 Plot attractors on sync manifold + time series 
 *colorsmode = "fromatts", "couplingcurrent" or "currents_ratio"
 """
 function run_study_sync_coordinates_transients(pvals, ptypes; psymb="I", colorsmode="fromatts", gridlength = 100, numics = 10, kwargs...)
 
-    @unpack ttrans, tend, Δt, ics, ϵ = pvals
+    @unpack ttrans, tend, Δt, ϵ = pvals
     T = tend-ttrans; Ttr = ttrans
+    ics = _get_ics(pvals)
     unique_ics = Dict(1:length(ics) .=> ics)
 
     angles_projection3 = [ [0.92, 0.47], [4.7, 0.01], [4.7, 1.57]]
@@ -135,11 +137,31 @@ function run_study_sync_coordinates_transients(pvals, ptypes; psymb="I", colorsm
     _plot_uncoupled!(pvals, ics[1], Ttr+500, Δt, axs; Ttr)
 
     figtitle = "3dstructures_synccoordinates"
-    plotsave(figtitle, fig, pvals, ptypes)
+    plotsave(figtitle, fig, pvals, ptypes; padright=10)
     
     return fig, axs
 end
 
+function _get_ics(pvals)
+    ics = get(pvals, "ics", nothing)
+    if isnothing(ics) 
+        @unpack N = pvals
+        return rand(Float64, 2N)
+    elseif ics isa Vector{Vector{Vector{<:Number}}}
+        return ics 
+    elseif ics isa Tuple 
+        ic_grid = ics 
+        sampler, = statespace_sampler(Random.MersenneTwister(1234); min_bounds = minimum.(ic_grid), max_bounds = maximum.(ic_grid))
+        @unpack extra_ics, numics = pvals
+        ics_rand = [sampler() for i in 1:(numics-length(extra_ics))]
+        # @show extra_ics
+        _ics = vcat(extra_ics, ics_rand)
+        # @show _ics
+        return _ics
+        # ics = StateSpaceSet(_ics)
+        return ics
+    end 
+end
 
 """
 Plot attractors on sync manifold given initial conditions; parameters defined in pvals

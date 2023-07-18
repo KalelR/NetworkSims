@@ -1,5 +1,7 @@
 """
 analysisdict is a dictionary mapping the analysis name to a dictionary containing possible parameters for the analysis
+sol[:, :] is a N x T matrix 
+sol.u is a Vector{Vector{Float64}} w T entries, each being N dimensional 
 """
 function analyse_solution(sol, analysisdict, pvals, odeprob)
     res = Dict();

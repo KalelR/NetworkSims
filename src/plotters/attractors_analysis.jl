@@ -142,9 +142,10 @@ end
 """
 assumes variables in form TxN
 """
-function plot_state_space_subspace!(xs, ys; fig=nothing, ax=nothing, idxrow=1, idxcol=1, label="V(t)", idx_t_snapshot=nothing)
+function plot_state_space_subspace!(xs, ys; fig=nothing, ax=nothing, idxrow=1, idxcol=1, label="V(t)", idx_t_snapshot=nothing, num_max_atts=Inf)
     N = size(xs, 2)
-    for i in 1:N 
+    for (idx, i) in enumerate(1:N)
+        if idx > num_max_atts break end
         lines!(ax, xs[:, i], ys[:, i])#; color=colors[i])
         if idx_t_snapshot isa Number 
             scatter!(ax, xs[idx_t_snapshot, i], ys[idx_t_snapshot, i]; marker=:circle)#; color=colors[i])
@@ -272,7 +273,7 @@ function integrate_u0s(ds, u0s::Dict{A, B}; T=1000, Ttr=500, Δt=0.1, kwargs...)
         if u0 isa StateSpaceSet u0 = u0[end] end
         # @show k, u0
         reinit!(ds, u0)
-        reinit_synaptic!(ds)
+        if current_parameters(ds) isa ParametersFHN reinit_synaptic!(ds) end 
         att_integ, ts = trajectory(ds, T, u0; Ttr, Δt) 
         atts_integ[k] = att_integ
         ts_integ = ts
@@ -336,7 +337,7 @@ function attractors_continuation(pvals_list, pidx; num_ics_per_parameter=50, gri
     return fullres
 end
 
-function plot_transition_info(fs_curves, atts_info, prange, psymb; params_idx_selected=[1,2,3], plot_timescale_info=false, pvals_all=nothing, quantifiers=nothing, max_num_atts=4)
+function plot_transition_info(fs_curves, atts_info, prange, psymb; params_idx_selected=[1,2,3], plot_timescale_info=false, pvals_all=nothing, quantifiers=nothing, max_num_atts=4, access_all=nothing)
     
     fig = Figure(resolution=(1500, 1200)); axs = []
     ax1 = Axis(fig[1, 1:length(params_idx_selected)]); push!(axs, ax1)
@@ -356,13 +357,16 @@ function plot_transition_info(fs_curves, atts_info, prange, psymb; params_idx_se
     ax2.xlabel = "I"
     linkxaxes!(ax1, ax2)
     
+    access_1 = access_all isa AbstractArray ? access_all[1] : [1, 3]
+    access_2 = access_all isa AbstractArray ? access_all[2] : [2, 4]
+    
     for (idx, param_idx) in enumerate(params_idx_selected)
         atts = atts_info[param_idx]
         ax = Axis(fig[3, idx])
-        plot_attractors(atts; fig, ax, colors, access=[1,3], markersize=10, num_max_atts=4); push!(axs, ax)
+        plot_attractors(atts; fig, ax, colors, access=access_1, markersize=10, num_max_atts=4); push!(axs, ax)
         ax.title = "$(string(psymb)) = $(prange[param_idx])"
         ax = Axis(fig[4, idx])
-        plot_attractors(atts; fig, ax, colors, access=[2,4], markersize=10, num_max_atts=4); push!(axs, ax)
+        plot_attractors(atts; fig, ax, colors, access=access_2, markersize=10, num_max_atts=4); push!(axs, ax)
     end 
 
     return fig, axs
@@ -410,8 +414,14 @@ function plot_attractors(attractors::Dict; fig=nothing, ax=nothing, access = [1,
     end
     for (idx, k) in enumerate(ukeys)
         if idx > num_max_atts break end
+        att = attractors[k]
         # scatter!(ax, vec(attractors[k][:, access]); color = colors[k], label = "$k", markersize = markersize, kwargs...)
-        lines!(ax, vec(attractors[k][:, access]); color = colors[k], label = "$k", markersize = markersize, linewidth=0.5, kwargs...)
+        # lines!(ax, vec(att[:, access]); color = colors[k], label = "$k", markersize = markersize, linewidth=0.5, kwargs...)
+        N = div(size(att, 2), 2)
+        xs = Matrix(att[:, 1:N])
+        ys = Matrix(att[:, N+1:2N])
+        plot_state_space_subspace!(xs, ys; fig, ax, idxrow, idxcol, idx_t_snapshot=length(ts), num_max_atts)
+
     end
     axislegend(ax)
     return fig
